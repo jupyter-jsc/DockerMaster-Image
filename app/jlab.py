@@ -1,0 +1,175 @@
+'''
+Created on 12 Feb, 2020
+
+@author: Tim Kreuzer
+'''
+
+from flask import request
+from flask_restful import Resource
+from flask import current_app as app
+
+from app import utils_common, utils_file_loads, jlab_utils, utils_db
+import os
+import requests
+from pathlib import Path
+from contextlib import closing
+import shutil
+
+class JupyterLabHandler(Resource):
+    def get(self):
+        try:
+            # Track actions through different webservices.
+            uuidcode = request.headers.get('uuidcode', '<no uuidcode>')
+            app.log.info("uuidcode={} - Get JupyterLab Status".format(uuidcode))
+            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers.to_list()))
+    
+            # Check for the J4J intern token
+            utils_common.validate_auth(app.log,
+                                       uuidcode,
+                                       request.headers.get('intern-authorization', None))
+    
+            request_headers = {}
+            for key, value in request.headers.items():
+                if 'Token' in key: # refresh, jhub, access
+                    key = key.replace('-', '_')
+                request_headers[key.lower()] = value
+            email = request_headers.get('email', '<no_email_submitted>')
+            servername = request_headers.get('servername', '<no_servername_submitted>6')
+            user_id = utils_db.get_user_id(app.log, uuidcode, app.database, email)
+            slave_id, containername = utils_db.get_container_info(app.log, uuidcode, app.database, user_id, servername)
+            if slave_id == 0:
+                app.log.error("uuidcode={} - Could not check if container {} is running".format(uuidcode, containername))
+                return "unknown", 200
+            slave_hostname = utils_db.get_slave_hostname(app.log, uuidcode, app.database, slave_id)
+            url = app.urls.get('dockerspawner', {}).get('url_jlab_hostname', '<no_url_found>').replace('<hostname>', slave_hostname)
+            header = {
+                     "Intern-Authorization": utils_file_loads.get_j4j_dockerspawner_token(),
+                     "uuidcode": uuidcode,
+                     "containername": containername
+                     }
+            with closing(requests.get(url,
+                                      headers=header,
+                                      verify=False)) as r:
+                if r.status_code == 200:
+                    app.log.trace("uuidcode={} - Answer from DockerSpawner {}: {}".format(uuidcode, slave_hostname, r.text))
+                    return r.text.strip(), 200
+                else:
+                    app.log.error("uuidcode={} - Could not check if container {} is running. DockerSpawner answered with: {} {}".format(uuidcode, containername, r.text, r.status_code))
+                    return "unknown", 200
+        except:
+            app.log.exception("JLab.get failed. Bugfix required")
+        return '', 202
+
+    def post(self):
+        try:
+            # Track actions through different webservices.
+            uuidcode = request.headers.get('uuidcode', '<no uuidcode>')
+            app.log.info("uuidcode={} - Start JupyterLab".format(uuidcode))
+            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers.to_list()))
+            app.log.trace("uuidcode={} - Json: {}".format(uuidcode, request.json))
+    
+            # Check for the J4J intern token
+            utils_common.validate_auth(app.log,
+                                       uuidcode,
+                                       request.headers.get('intern-authorization', None))
+    
+            request_headers = {}
+            for key, value in request.headers.items():
+                if 'Token' in key: # refresh, jhub, access
+                    key = key.replace('-', '_')
+                request_headers[key.lower()] = value
+            request_json = {}
+            for key, value in request.json.items():
+                if 'Token' in key: # refresh, jhub, access
+                    key = key.replace('-', '_')
+                request_json[key.lower()] = value
+            app.log.trace("uuidcode={} - New Headers: {}".format(uuidcode, request_headers))
+            app.log.trace("uuidcode={} - New Json: {}".format(uuidcode, request_json))
+            
+            servername = request_json.get('servername')
+            email = request_json.get('email')
+            environments = request_json.get('environments')
+            image = request_json.get('image')
+            port = request_json.get('port')
+            jupyterhub_api_url = request_json.get('jupyterhub_api_url')
+            config = utils_file_loads.get_general_config()
+            quota_config = utils_file_loads.get_quota_config()
+            basefolder = config.get('basefolder', '<no basefolder defined>')
+            userfolder = os.path.join(basefolder, email)
+            serverfolder = Path(os.path.join(userfolder, '.{}'.format(uuidcode)))
+            os.umask(0)
+            user_id = jlab_utils.create_user(app.log, uuidcode, app.database, quota_config, email, basefolder, userfolder)
+            jlab_utils.create_server_dirs(app.log, uuidcode, app.urls, app.database, user_id, email, servername, serverfolder)
+            jlab_utils.setup_server_quota(app.log, uuidcode, quota_config, serverfolder)
+            try:
+                start = jlab_utils.call_slave_start(app.log, uuidcode, app.database, app.urls, userfolder, user_id, servername, email, environments, image, port, jupyterhub_api_url)
+            except:
+                app.log.exception("uuidcode={} - Could not start JupyterLab".format(uuidcode))
+                start = False
+            if start:
+                return "True", 200
+            else:
+                return "False", 200
+        except:
+            app.log.exception("JLab.post failed. Bugfix required")
+        return "", 500
+
+    def delete(self):
+        try:
+            # Track actions through different webservices.
+            uuidcode = request.headers.get('uuidcode', '<no uuidcode>')
+            app.log.info("uuidcode={} - Delete Server".format(uuidcode))
+            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers.to_list()))
+    
+            # Check for the J4J intern token
+            utils_common.validate_auth(app.log,
+                                       uuidcode,
+                                       request.headers.get('intern-authorization', None))
+            request_headers = {}
+            for key, value in request.headers.items():
+                if 'Token' in key: # refresh, jhub, access
+                    key = key.replace('-', '_')
+                request_headers[key.lower()] = value           
+            
+            config = utils_file_loads.get_general_config()
+            email = request_headers.get('email', '<no_email_submitted>')
+            servername = request_headers.get('servername', '<no_servername_submitted>')
+            user_id, slave_id, slave_hostname, containername, running_no = jlab_utils.get_slave_infos(app.log, uuidcode, email, servername)
+            
+            url = app.urls.get('dockerspawner', {}).get('url_jlab_hostname', '<no_url_found>').replace('<hostname>', slave_hostname)
+            headers = {
+                      "Intern-Authorization": utils_file_loads.get_j4j_dockerspawner_token(),
+                      "uuidcode": uuidcode,
+                      "containername": containername
+                      }
+            try:
+                with closing(requests.delete(url,
+                                             headers=headers,
+                                             verify=False)) as r:
+                    if r.status_code != 202:
+                        app.log.error("uuidcode={} - DockerSpawner delete failed: {} {}".format(uuidcode, r.text, r.status_code))
+            except:
+                app.log.exception("uuidcode={} - Could not call DockerSpawner {}".format(uuidcode, slave_hostname))
+            basefolder = config.get('basefolder', '<no basefolder defined>')
+            userfolder = os.path.join(basefolder, email)
+            serverfolder = Path(os.path.join(userfolder, '.{}'.format(containername)))
+            utils_db.decrease_slave_running(app.log, uuidcode, app.database, slave_id)
+            utils_db.remove_container(app.log, uuidcode, user_id, servername)
+            log_dir = Path(os.path.join(config.get('jobs_path', '<no_jobs_path>'), "{}-{}".format(email, containername)))
+            shutil.copy2(os.path.join(serverfolder, ".jupyterlabhub.log"), os.path.join(log_dir, "jupyterlabhub.log"))
+            jlab_utils.remove_server_quota(app.log, uuidcode, containername)
+            if running_no == 1:
+                watch_watch_upload_path = config.get('watch_watch_upload_path_delete', '<no_watchwatchuploadpathdelete_defined>')        
+                upload_dir = os.path.join(userfolder, "work", ".hpc_mount", ".upload")
+                app.log.debug("uuidcode={} - Write {} to {}".format(uuidcode, upload_dir, watch_watch_upload_path))
+                with open(os.path.join(watch_watch_upload_path, uuidcode), 'w') as f:
+                    f.write(upload_dir)
+                watch_watch_projects_path = config.get('watch_watch_projects_path_delete', '<no_watchwatchprojectspathdelete_defined>')
+                project_dir = os.path.join(userfolder, "Projects", ".share")
+                app.log.debug("uuidcode={} - Write {} to {}".format(uuidcode, project_dir, watch_watch_projects_path))
+                with open(os.path.join(watch_watch_projects_path, uuidcode), 'w') as f:
+                    f.write(project_dir)
+        except:
+            app.log.exception("JLabs.delete failed. Bugfix required")
+            return "", 500
+        return '', 202
