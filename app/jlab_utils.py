@@ -6,14 +6,14 @@ Created on Feb 12, 2020
 
 import os
 import shutil
-from subprocess import STDOUT, check_output, CalledProcessError
+from subprocess import STDOUT, check_output
 
 import requests
 from contextlib import closing
 from pathlib import Path
 from app import utils_db, utils_file_loads, jlab_utils
 
-def call_slave_start(app_logger, uuidcode, app_database, app_urls, userfolder, user_id, servername, email, environments, image, port, jupyterhub_api_url):
+def call_slave_start(app_logger, uuidcode, app_database, app_urls, userfolder, jlab_path, quota_config, set_user_quota, user_id, servername, email, environments, image, port, jupyterhub_api_url):
     next_slave_id, next_slave_hostname = utils_db.get_next_slave(app_logger, uuidcode, app_database)
     if next_slave_id == 0:
         app_logger.error("uuidcode={} - Could not find any slaves in database".format(uuidcode))
@@ -45,64 +45,20 @@ def call_slave_start(app_logger, uuidcode, app_database, app_urls, userfolder, u
     utils_db.insert_container(app_logger, uuidcode, app_database, user_id, next_slave_id, servername)
     user_running = utils_db.get_user_running(app_logger, uuidcode, app_database, user_id)
     utils_db.increase_slave_running(app_logger, uuidcode, app_database, next_slave_id)
-    if user_running == 1:
-        conf = utils_file_loads.get_general_config()
-        watch_watch_upload_path = conf.get('watch_watch_upload_path', '<no_watchwatchuploadpath_defined>')        
-        upload_dir = os.path.join(userfolder, "work", ".hpc_mount", ".upload")
-        app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, upload_dir, watch_watch_upload_path))
-        with open(os.path.join(watch_watch_upload_path, uuidcode), 'w') as f:
-            f.write(upload_dir)
-        watch_watch_projects_path = conf.get('watch_watch_projects_path', '<no_watchwatchprojectspath_defined>')
-        project_dir = os.path.join(userfolder, "Projects", ".share")
-        app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, project_dir, watch_watch_projects_path))
-        with open(os.path.join(watch_watch_projects_path, uuidcode), 'w') as f:
-            f.write(project_dir)
-    return True
-
-def remove_server_quota(app_logger, uuidcode, containername, basefolder):
-    cmd1 = ["xfs_quota", "-x", "-c", "limit -p bsoft=0 bhard=0 {}".format(containername), basefolder]
-    try:
-        cmd(app_logger, uuidcode, cmd1)
-    except CalledProcessError:
-        app_logger.exception("uuidcode={} - Could not set quotas".format(uuidcode))
-    with open('/etc/projid', 'r') as f:
-        projids = f.read()
-    projids_list = projids.strip().split()
-    projid = 0
-    for line in projids_list:
-        if containername in line:
-            projid = line.split(':')[1]
-    with open('/etc/projid', 'w') as f:
-        for line in projids_list:
-            if not line.startswith(containername):
-                f.write(line+'\n')
-    with open('/etc/projects', 'r') as f:
-        projects = f.read()
-    projects_list = projects.strip().split()
-    with open('/etc/projects', 'w') as f:
-        for line in projects_list:
-            if not line.startswith(projid):
-                f.write(line+'\n')
+    jlab_output = "{};{};{};{};{};{};{};{};{}".format(userfolder,
+                                                      email.replace("@", "_at_"),
+                                                      uuidcode,
+                                                      quota_config.get('ALL', "25g"),
+                                                      quota_config.get('WORK', "10g"),
+                                                      quota_config.get('PROJECTS', "10g"),
+                                                      quota_config.get('HOME', "512m"),
+                                                      set_user_quota,
+                                                      user_running == 1)
     
-
-def setup_server_quota(app_logger, uuidcode, quota_config, basefolder, serverfolder):
-    with open('/etc/projid', 'r') as f:
-        projids = f.read()
-    projids_list = projids.strip().split()
-    last_projid = projids_list[-1].split(':')[1]    
-    with open('/etc/projects', 'a') as f:
-        f.write('{}:{}\n'.format(int(last_projid)+1, serverfolder))
-    with open('/etc/projid', 'a') as f:
-        f.write('{}:{}\n'.format(uuidcode, int(last_projid)+1))
-        
-    cmd1 = ["xfs_quota", "-x", "-c", "project -s {}".format(uuidcode), basefolder]
-    cmd2 = ["xfs_quota", "-x", "-c", "limit -p bhard={} {}".format(quota_config.get('HOME', "512m"), uuidcode), basefolder]
-    try:
-        cmd(app_logger, uuidcode, cmd1)
-        cmd(app_logger, uuidcode, cmd2)
-    except CalledProcessError:
-        app_logger.exception("uuidcode={} - Could not set quotas".format(uuidcode))
-        
+    app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, jlab_path))
+    with open(os.path.join(jlab_path, uuidcode), 'w') as f:
+        f.write(jlab_output)
+    return True
     
 
 def create_server_dirs(app_logger, uuidcode, app_urls, app_database, user_id, email, servername, serverfolder, basefolder):
@@ -136,18 +92,15 @@ def create_server_dirs(app_logger, uuidcode, app_urls, app_database, user_id, em
         utils_db.remove_container(app_logger, uuidcode, user_id, servername)
         log_dir = Path(os.path.join(config.get('jobs_path', '<no_jobs_path>'), "{}-{}".format(email, containername)))
         shutil.copy2(os.path.join(serverfolder, ".jupyterlabhub.log"), os.path.join(log_dir, "jupyterlabhub.log"))
-        jlab_utils.remove_server_quota(app_logger, uuidcode, containername)
-        if running_no == 1:
-            watch_watch_upload_path_delete = config.get('watch_watch_upload_path_delete', '<no_watchwatchuploadpathdelete_defined>')        
-            upload_dir = os.path.join(userfolder, "work", ".hpc_mount", ".upload")
-            app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, upload_dir, watch_watch_upload_path_delete))
-            with open(os.path.join(watch_watch_upload_path_delete, uuidcode), 'w') as f:
-                f.write(upload_dir)
-            watch_watch_projects_path_delete = config.get('watch_watch_projects_path_delete', '<no_watchwatchprojectspathdelete_defined>')
-            project_dir = os.path.join(userfolder, "Projects", ".share")
-            app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, project_dir, watch_watch_projects_path_delete))
-            with open(os.path.join(watch_watch_projects_path_delete, uuidcode), 'w') as f:
-                f.write(project_dir)
+        
+        jlab_output = "{};{};{}".format(userfolder,
+                                        servername,
+                                        running_no == 1)
+        jlab_delete_path = config.get('jlab_delete', '<no_jlab_delete_defined>')
+        app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, jlab_delete_path))
+        with open(os.path.join(jlab_delete_path, uuidcode), 'w') as f:
+            f.write(jlab_output)
+            
     # Create folder for this JupyterLab
     if not serverfolder.exists():
         b2drop = Path(os.path.join(serverfolder, "B2DROP"))
@@ -198,47 +151,18 @@ def create_server_dirs(app_logger, uuidcode, app_urls, app_database, user_id, em
 def create_user(app_logger, uuidcode, app_database, quota_config, email, basefolder, userfolder):
     user_id = utils_db.get_user_id(app_logger, uuidcode, app_database, email)
     if user_id != 0:
-        return user_id
+        return user_id, False
     utils_db.create_user(app_logger, uuidcode, app_database, email)
     user_id = utils_db.get_user_id(app_logger, uuidcode, app_database, email)
     create_base_dirs(app_logger, uuidcode, basefolder, userfolder)
-    setup_base_quota(app_logger, uuidcode, quota_config, basefolder, userfolder, email)
-    return user_id
+    #setup_base_quota(app_logger, uuidcode, quota_config, basefolder, userfolder, email)
+    return user_id, True
 
 def cmd(app_logger, uuidcode, cmd):
     app_logger.trace("uuidcode={} - Cmd: {}".format(uuidcode, cmd))
     ret = check_output(cmd, stderr=STDOUT, timeout=5)
     app_logger.trace("uuidcode={} - Output: {}".format(uuidcode, ret))
     return ret    
-
-def setup_base_quota(app_logger, uuidcode, quota_config, basefolder, userfolder, email):
-    with open('/etc/projid', 'r') as f:
-        projids = f.read()
-    projids_list = projids.strip().split()
-    last_projid = projids_list[-1].split(':')[1]    
-    with open('/etc/projects', 'a') as f:
-        f.write('{}:{}\n'.format(int(last_projid)+1, userfolder))
-        f.write('{}:{}\n'.format(int(last_projid)+2, os.path.join(userfolder, "work")))
-        f.write('{}:{}\n'.format(int(last_projid)+3, os.path.join(userfolder, "Projects")))
-    with open('/etc/projid', 'a') as f:
-        f.write('{}:{}\n'.format(email, int(last_projid)+1))
-        f.write('{}work:{}\n'.format(email, int(last_projid)+2))
-        f.write('{}Projects:{}\n'.format(email, int(last_projid)+3))
-    cmd1 = ["xfs_quota", "-x", "-c", "project -s {}".format(email), basefolder]
-    cmd2 = ["xfs_quota", "-x", "-c", "limit -p bhard={} {}".format(quota_config.get('ALL', "25g"), email), basefolder]
-    cmd3 = ["xfs_quota", "-x", "-c", "project -s {}work".format(email), basefolder]
-    cmd4 = ["xfs_quota", "-x", "-c", "limit -p bhard={} {}work".format(quota_config.get('WORK', "10g"), email), basefolder]
-    cmd5 = ["xfs_quota", "-x", "-c", "project -s {}Projects".format(email), basefolder]
-    cmd6 = ["xfs_quota", "-x", "-c", "limit -p bhard={} {}Projects".format(quota_config.get('PROJECTS', "10g"), email), basefolder]
-    try:
-        cmd(app_logger, uuidcode, cmd1)
-        cmd(app_logger, uuidcode, cmd2)
-        cmd(app_logger, uuidcode, cmd3)
-        cmd(app_logger, uuidcode, cmd4)
-        cmd(app_logger, uuidcode, cmd5)
-        cmd(app_logger, uuidcode, cmd6)
-    except CalledProcessError:
-        app_logger.exception("uuidcode={} - Could not set quotas".format(uuidcode))
 
 def create_base_dirs(app_logger, uuidcode, basefolder, userfolder):
     work = Path(os.path.join(userfolder, "work"))

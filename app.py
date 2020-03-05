@@ -72,6 +72,8 @@ class FlaskApp(Flask):
     log = None
     with open('/etc/j4j/j4j_mount/j4j_common/urls.json') as f:
         urls = json.load(f)
+    with open('/etc/j4j/j4j_mount/j4j_docker/master/database.json', 'r') as f:
+        database = json.load(f)
     def __init__(self, *args, **kwargs):
         self.log = logging.getLogger('J4J_DockerMaster')
         super(FlaskApp, self).__init__(*args, **kwargs)

@@ -98,11 +98,25 @@ class JupyterLabHandler(Resource):
             userfolder = os.path.join(basefolder, email)
             serverfolder = Path(os.path.join(userfolder, '.{}'.format(uuidcode)))
             os.umask(0)
-            user_id = jlab_utils.create_user(app.log, uuidcode, app.database, quota_config, email, basefolder, userfolder)
+            user_id, set_user_quota = jlab_utils.create_user(app.log, uuidcode, app.database, quota_config, email, basefolder, userfolder)
             jlab_utils.create_server_dirs(app.log, uuidcode, app.urls, app.database, user_id, email, servername, serverfolder)
-            jlab_utils.setup_server_quota(app.log, uuidcode, quota_config, serverfolder)
+            #jlab_utils.setup_server_quota(app.log, uuidcode, quota_config, serverfolder)
             try:
-                start = jlab_utils.call_slave_start(app.log, uuidcode, app.database, app.urls, userfolder, user_id, servername, email, environments, image, port, jupyterhub_api_url)
+                start = jlab_utils.call_slave_start(app.log,
+                                                    uuidcode,
+                                                    app.database,
+                                                    app.urls,
+                                                    userfolder,
+                                                    config.get('jlab', '<no_jlab_path_defined>'),
+                                                    quota_config,
+                                                    set_user_quota,
+                                                    user_id,
+                                                    servername,
+                                                    email,
+                                                    environments,
+                                                    image,
+                                                    port,
+                                                    jupyterhub_api_url)
             except:
                 app.log.exception("uuidcode={} - Could not start JupyterLab".format(uuidcode))
                 start = False
@@ -157,18 +171,14 @@ class JupyterLabHandler(Resource):
             utils_db.remove_container(app.log, uuidcode, user_id, servername)
             log_dir = Path(os.path.join(config.get('jobs_path', '<no_jobs_path>'), "{}-{}".format(email, containername)))
             shutil.copy2(os.path.join(serverfolder, ".jupyterlabhub.log"), os.path.join(log_dir, "jupyterlabhub.log"))
-            jlab_utils.remove_server_quota(app.log, uuidcode, containername)
-            if running_no == 1:
-                watch_watch_upload_path = config.get('watch_watch_upload_path_delete', '<no_watchwatchuploadpathdelete_defined>')        
-                upload_dir = os.path.join(userfolder, "work", ".hpc_mount", ".upload")
-                app.log.debug("uuidcode={} - Write {} to {}".format(uuidcode, upload_dir, watch_watch_upload_path))
-                with open(os.path.join(watch_watch_upload_path, uuidcode), 'w') as f:
-                    f.write(upload_dir)
-                watch_watch_projects_path = config.get('watch_watch_projects_path_delete', '<no_watchwatchprojectspathdelete_defined>')
-                project_dir = os.path.join(userfolder, "Projects", ".share")
-                app.log.debug("uuidcode={} - Write {} to {}".format(uuidcode, project_dir, watch_watch_projects_path))
-                with open(os.path.join(watch_watch_projects_path, uuidcode), 'w') as f:
-                    f.write(project_dir)
+            jlab_output = "{};{};{}".format(userfolder,
+                                            servername,
+                                            running_no == 1)
+            jlab_delete_path = config.get('jlab_delete', '<no_jlab_delete_defined>')
+            app.log.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, jlab_delete_path))
+            with open(os.path.join(jlab_delete_path, uuidcode), 'w') as f:
+                f.write(jlab_output)
+                
         except:
             app.log.exception("JLabs.delete failed. Bugfix required")
             return "", 500
