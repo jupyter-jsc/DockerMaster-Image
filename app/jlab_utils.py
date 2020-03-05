@@ -6,7 +6,6 @@ Created on Feb 12, 2020
 
 import os
 import shutil
-from subprocess import STDOUT, check_output
 
 import requests
 from contextlib import closing
@@ -158,11 +157,6 @@ def create_user(app_logger, uuidcode, app_database, quota_config, email, basefol
     #setup_base_quota(app_logger, uuidcode, quota_config, basefolder, userfolder, email)
     return user_id, True
 
-def cmd(app_logger, uuidcode, cmd):
-    app_logger.trace("uuidcode={} - Cmd: {}".format(uuidcode, cmd))
-    ret = check_output(cmd, stderr=STDOUT, timeout=5)
-    app_logger.trace("uuidcode={} - Output: {}".format(uuidcode, ret))
-    return ret    
 
 def create_base_dirs(app_logger, uuidcode, basefolder, userfolder):
     work = Path(os.path.join(userfolder, "work"))

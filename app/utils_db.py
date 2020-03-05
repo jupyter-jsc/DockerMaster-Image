@@ -49,7 +49,7 @@ def get_next_slave(app_logger, uuidcode, database):
                                   database=database.get('database'))) as con: # auto closes
         with closing(con.cursor()) as cur: # auto closes
             with con: # auto commit
-                cmd = "SELECT id, Directory FROM Slaves ORDER BY Running LIMIT 1"
+                cmd = "SELECT id, Hostname FROM DockerSpawner ORDER BY Running LIMIT 1"
                 app_logger.trace("uuidcode={} - Execute: {}".format(uuidcode, cmd))
                 cur.execute(cmd)
                 results = cur.fetchall()
@@ -102,7 +102,7 @@ def increase_slave_running(app_logger, uuidcode, database, slave_id):
                                   database=database.get('database'))) as con: # auto closes
         with closing(con.cursor()) as cur: # auto closes
             with con: # auto commit
-                cmd = "UPDATE Slaves SET Running = Running + 1 WHERE id = %s"
+                cmd = "UPDATE DockerSpawner SET Running = Running + 1 WHERE id = %s"
                 app_logger.trace("uuidcode={} - Execute: {}".format(uuidcode, cmd))
                 cur.execute(cmd,
                             (slave_id, ))
@@ -137,7 +137,7 @@ def get_slave_hostname(app_logger, uuidcode, database, slave_id):
                                   database=database.get('database'))) as con: # auto closes
         with closing(con.cursor()) as cur: # auto closes
             with con: # auto commit
-                cmd = "SELECT Hostname FROM Slaves WHERE id = %s"
+                cmd = "SELECT Hostname FROM DockerSpawner WHERE id = %s"
                 app_logger.trace("uuidcode={} - Execute: {}".format(uuidcode, cmd))
                 cur.execute(cmd,
                             (slave_id, ))
@@ -159,7 +159,7 @@ def decrease_slave_running(app_logger, uuidcode, database, slave_id):
                                   database=database.get('database'))) as con: # auto closes
         with closing(con.cursor()) as cur: # auto closes
             with con: # auto commit
-                cmd = "UPDATE Slaves SET Running = Running - 1 WHERE id = %s"
+                cmd = "UPDATE DockerSpawner SET Running = Running - 1 WHERE id = %s"
                 app_logger.trace("uuidcode={} - Execute: {}".format(uuidcode, cmd))
                 cur.execute(cmd,
                             (slave_id, ))
