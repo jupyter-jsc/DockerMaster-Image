@@ -147,9 +147,9 @@ class JupyterLabHandler(Resource):
                 app.log.exception("uuidcode={} - Could not start JupyterLab".format(uuidcode))
                 start = False
             if start:
-                return "True", 200
+                return 200
             else:
-                return "False", 200
+                return 501
         except:
             app.log.exception("JLab.post failed. Bugfix required")
         return "", 500
@@ -221,7 +221,7 @@ class JupyterLabHandler(Resource):
             except:
                 app.log.exception("uuidcode={} - Could not copy log".format(uuidcode))
             jlab_output = "{};{};{}".format(userfolder,
-                                            servername,
+                                            containername,
                                             running_no == 1)
             jlab_delete_path = config.get('jlab_delete', '<no_jlab_delete_defined>')
             app.log.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, os.path.join(jlab_delete_path, uuidcode)))
