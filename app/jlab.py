@@ -29,7 +29,7 @@ class JupyterLabHandler(Resource):
             # Track actions through different webservices.
             uuidcode = request.headers.get('uuidcode', '<no uuidcode>')
             app.log.info("uuidcode={} - Get JupyterLab Status".format(uuidcode))
-            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers.to_list()))
+            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers))
     
             # Check for the J4J intern token
             utils_common.validate_auth(app.log,
@@ -42,9 +42,20 @@ class JupyterLabHandler(Resource):
                     key = key.replace('-', '_')
                 request_headers[key.lower()] = value
             email = request_headers.get('email', '<no_email_submitted>')
+            email = email.replace("@", "_at_")
+            app.log.trace("uuidcode={} - Get User ID for email: {}".format(uuidcode, email))
             servername = request_headers.get('servername', '<no_servername_submitted>6')
             user_id = utils_db.get_user_id(app.log, uuidcode, app.database, email)
-            slave_id, containername = utils_db.get_container_info(app.log, uuidcode, app.database, user_id, servername)
+            
+            
+            app.log.trace("uuidcode={} - User_id: {}".format(uuidcode, user_id))
+            results = utils_db.get_container_info(app.log, uuidcode, app.database, user_id, servername)
+            if len(results) > 0:
+                slave_id, containername = results
+            else:
+                app.log.error("uuidcode={} - Containerinfo is empty for: user_id: {} , servername={}".format(uuidcode, user_id, servername))
+                return "unknown", 200
+            
             if slave_id == 0:
                 app.log.error("uuidcode={} - Could not check if container {} is running".format(uuidcode, containername))
                 return "unknown", 200
@@ -59,7 +70,7 @@ class JupyterLabHandler(Resource):
                                       headers=header,
                                       verify=False)) as r:
                 if r.status_code == 200:
-                    app.log.trace("uuidcode={} - Answer from DockerSpawner {}: {}".format(uuidcode, slave_hostname, r.text))
+                    app.log.trace("uuidcode={} - Answer from DockerSpawner {}: {}".format(uuidcode, slave_hostname, r.text.strip()))
                     return r.text.strip(), 200
                 else:
                     app.log.error("uuidcode={} - Could not check if container {} is running. DockerSpawner answered with: {} {}".format(uuidcode, containername, r.text, r.status_code))
@@ -92,7 +103,7 @@ class JupyterLabHandler(Resource):
             utils_common.validate_auth(app.log,
                                        uuidcode,
                                        request.headers.get('intern-authorization', None))
-    
+            
             request_json = {}
             for key, value in request.json.items():
                 if 'Token' in key: # refresh, jhub, access
@@ -102,6 +113,7 @@ class JupyterLabHandler(Resource):
             
             servername = request_json.get('servername')
             email = request_json.get('email')
+            email = email.replace("@", "_at_")
             environments = request_json.get('environments')
             image = request_json.get('image')
             port = request_json.get('port')
@@ -154,7 +166,7 @@ class JupyterLabHandler(Resource):
             # Track actions through different webservices.
             uuidcode = request.headers.get('uuidcode', '<no uuidcode>')
             app.log.info("uuidcode={} - Delete Server".format(uuidcode))
-            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers.to_list()))
+            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers))
     
             # Check for the J4J intern token
             utils_common.validate_auth(app.log,
@@ -168,11 +180,20 @@ class JupyterLabHandler(Resource):
             
             config = utils_file_loads.get_general_config()
             email = request_headers.get('email', '<no_email_submitted>')
+            email = email.replace("@", "_at_")
             servername = request_headers.get('servername', '<no_servername_submitted>')
-            user_id, slave_id, slave_hostname, containername, running_no = jlab_utils.get_slave_infos(app.log,
-                                                                                                      uuidcode,
-                                                                                                      email,
-                                                                                                      servername)
+            
+            results = jlab_utils.get_slave_infos(app.log,
+                                                 uuidcode,
+                                                 app.database,
+                                                 servername,
+                                                 email)
+            if len(results) > 0:
+                user_id, slave_id, slave_hostname, containername, running_no = results
+            else:
+                app.log.warning("uuidcode={} - {} not in database".format(uuidcode, servername))
+                return '', 202
+
             
             url = app.urls.get('dockerspawner', {}).get('url_jlab_hostname', '<no_url_found>').replace('<hostname>', slave_hostname)
             headers = {
@@ -192,14 +213,18 @@ class JupyterLabHandler(Resource):
             userfolder = os.path.join(basefolder, email)
             serverfolder = Path(os.path.join(userfolder, '.{}'.format(containername)))
             utils_db.decrease_slave_running(app.log, uuidcode, app.database, slave_id)
-            utils_db.remove_container(app.log, uuidcode, user_id, servername)
+            utils_db.remove_container(app.log, uuidcode, app.database, user_id, servername)
             log_dir = Path(os.path.join(config.get('jobs_path', '<no_jobs_path>'), "{}-{}".format(email, containername)))
-            shutil.copy2(os.path.join(serverfolder, ".jupyterlabhub.log"), os.path.join(log_dir, "jupyterlabhub.log"))
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+                shutil.copy2(os.path.join(serverfolder, ".jupyterlabhub.log"), os.path.join(log_dir, "jupyterlabhub.log"))
+            except:
+                app.log.exception("uuidcode={} - Could not copy log".format(uuidcode))
             jlab_output = "{};{};{}".format(userfolder,
                                             servername,
                                             running_no == 1)
             jlab_delete_path = config.get('jlab_delete', '<no_jlab_delete_defined>')
-            app.log.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, jlab_delete_path))
+            app.log.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, os.path.join(jlab_delete_path, uuidcode)))
             with open(os.path.join(jlab_delete_path, uuidcode), 'w') as f:
                 f.write(jlab_output)
                 

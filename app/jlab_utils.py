@@ -54,7 +54,7 @@ def call_slave_start(app_logger, uuidcode, app_database, app_urls, userfolder, j
                                                       set_user_quota,
                                                       user_running == 1)
     
-    app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, jlab_path))
+    app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, os.path.join(jlab_path, uuidcode)))
     with open(os.path.join(jlab_path, uuidcode), 'w') as f:
         f.write(jlab_output)
     return True
@@ -62,14 +62,15 @@ def call_slave_start(app_logger, uuidcode, app_database, app_urls, userfolder, j
 
 def create_server_dirs(app_logger, uuidcode, app_urls, app_database, user_id, email, servername, serverfolder, basefolder):
     results = utils_db.get_container_info(app_logger, uuidcode, app_database, user_id, servername)
+    app_logger.debug("uuidcode={} - Container Info: {}".format(uuidcode, results))
     if len(results) > 0:
         app_logger.debug("uuidcode={} - Server with name {} already exists. Delete it.".format(uuidcode, serverfolder))
         config = utils_file_loads.get_general_config()
         user_id, slave_id, slave_hostname, containername, running_no = jlab_utils.get_slave_infos(app_logger,
                                                                                                   uuidcode,
                                                                                                   app_database,
-                                                                                                  email,
-                                                                                                  servername)
+                                                                                                  servername,
+                                                                                                  email)
         
         url = app_urls.get('dockerspawner', {}).get('url_jlab_hostname', '<no_url_found>').replace('<hostname>', slave_hostname)
         headers = {
@@ -89,15 +90,19 @@ def create_server_dirs(app_logger, uuidcode, app_urls, app_database, user_id, em
         userfolder = os.path.join(basefolder, email)
         serverfolder = Path(os.path.join(userfolder, '.{}'.format(containername)))
         utils_db.decrease_slave_running(app_logger, uuidcode, app_database, slave_id)
-        utils_db.remove_container(app_logger, uuidcode, user_id, servername)
+        utils_db.remove_container(app_logger, uuidcode, app_database, user_id, servername)
         log_dir = Path(os.path.join(config.get('jobs_path', '<no_jobs_path>'), "{}-{}".format(email, containername)))
-        shutil.copy2(os.path.join(serverfolder, ".jupyterlabhub.log"), os.path.join(log_dir, "jupyterlabhub.log"))
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+            shutil.copy2(os.path.join(serverfolder, ".jupyterlabhub.log"), os.path.join(log_dir, "jupyterlabhub.log"))
+        except:
+            app_logger.exception("uuidcode={} - Could not copy log".format(uuidcode))
         
         jlab_output = "{};{};{}".format(userfolder,
                                         servername,
                                         running_no == 1)
         jlab_delete_path = config.get('jlab_delete', '<no_jlab_delete_defined>')
-        app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, jlab_delete_path))
+        app_logger.debug("uuidcode={} - Write {} to {}".format(uuidcode, jlab_output, os.path.join(jlab_delete_path, uuidcode)))
         with open(os.path.join(jlab_delete_path, uuidcode), 'w') as f:
             f.write(jlab_output)
             
@@ -195,7 +200,11 @@ def create_base_dirs(app_logger, uuidcode, basefolder, userfolder):
     
 def get_slave_infos(app_logger, uuidcode, app_database, servername, email):
     user_id = utils_db.get_user_id(app_logger, uuidcode, app_database, email)
-    slave_id, containername = utils_db.get_container_info(app_logger, uuidcode, app_database, user_id, servername)
+    results = utils_db.get_container_info(app_logger, uuidcode, app_database, user_id, servername)
+    if len(results) > 0:
+        slave_id, containername = results
+    else:
+        return []
     slave_hostname = utils_db.get_slave_hostname(app_logger, uuidcode, app_database, slave_id)
     running_no = utils_db.get_user_running(app_logger, uuidcode, app_database, user_id)
     return user_id, slave_id, slave_hostname, containername, running_no
