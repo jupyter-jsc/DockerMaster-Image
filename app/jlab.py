@@ -17,6 +17,14 @@ import shutil
 
 class JupyterLabHandler(Resource):
     def get(self):
+        """
+        Headers:
+            intern-authorization
+            uuidcode
+            email
+            servername
+            
+        """
         try:
             # Track actions through different webservices.
             uuidcode = request.headers.get('uuidcode', '<no uuidcode>')
@@ -62,10 +70,22 @@ class JupyterLabHandler(Resource):
 
     def post(self):
         try:
+            """
+            Headers:
+                intern-authorization
+                uuidcode
+            Body:
+                servername
+                email
+                environments
+                image
+                port
+                jupyterhub_api_url
+            """
             # Track actions through different webservices.
             uuidcode = request.headers.get('uuidcode', '<no uuidcode>')
             app.log.info("uuidcode={} - Start JupyterLab".format(uuidcode))
-            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers.to_list()))
+            app.log.trace("uuidcode={} - Headers: {}".format(uuidcode, request.headers))
             app.log.trace("uuidcode={} - Json: {}".format(uuidcode, request.json))
     
             # Check for the J4J intern token
@@ -73,17 +93,11 @@ class JupyterLabHandler(Resource):
                                        uuidcode,
                                        request.headers.get('intern-authorization', None))
     
-            request_headers = {}
-            for key, value in request.headers.items():
-                if 'Token' in key: # refresh, jhub, access
-                    key = key.replace('-', '_')
-                request_headers[key.lower()] = value
             request_json = {}
             for key, value in request.json.items():
                 if 'Token' in key: # refresh, jhub, access
                     key = key.replace('-', '_')
                 request_json[key.lower()] = value
-            app.log.trace("uuidcode={} - New Headers: {}".format(uuidcode, request_headers))
             app.log.trace("uuidcode={} - New Json: {}".format(uuidcode, request_json))
             
             servername = request_json.get('servername')
@@ -99,7 +113,7 @@ class JupyterLabHandler(Resource):
             serverfolder = Path(os.path.join(userfolder, '.{}'.format(uuidcode)))
             os.umask(0)
             user_id, set_user_quota = jlab_utils.create_user(app.log, uuidcode, app.database, quota_config, email, basefolder, userfolder)
-            jlab_utils.create_server_dirs(app.log, uuidcode, app.urls, app.database, user_id, email, servername, serverfolder)
+            jlab_utils.create_server_dirs(app.log, uuidcode, app.urls, app.database, user_id, email, servername, serverfolder, basefolder)
             #jlab_utils.setup_server_quota(app.log, uuidcode, quota_config, serverfolder)
             try:
                 start = jlab_utils.call_slave_start(app.log,
@@ -129,6 +143,13 @@ class JupyterLabHandler(Resource):
         return "", 500
 
     def delete(self):
+        """
+        Headers
+            Intern-Authorization
+            uuidcode
+            email
+            servername            
+        """
         try:
             # Track actions through different webservices.
             uuidcode = request.headers.get('uuidcode', '<no uuidcode>')
@@ -148,7 +169,10 @@ class JupyterLabHandler(Resource):
             config = utils_file_loads.get_general_config()
             email = request_headers.get('email', '<no_email_submitted>')
             servername = request_headers.get('servername', '<no_servername_submitted>')
-            user_id, slave_id, slave_hostname, containername, running_no = jlab_utils.get_slave_infos(app.log, uuidcode, email, servername)
+            user_id, slave_id, slave_hostname, containername, running_no = jlab_utils.get_slave_infos(app.log,
+                                                                                                      uuidcode,
+                                                                                                      email,
+                                                                                                      servername)
             
             url = app.urls.get('dockerspawner', {}).get('url_jlab_hostname', '<no_url_found>').replace('<hostname>', slave_hostname)
             headers = {

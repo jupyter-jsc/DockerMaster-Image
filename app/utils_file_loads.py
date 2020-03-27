@@ -26,6 +26,8 @@ def get_general_config():
         ret = json.load(f)
     return ret
 
+
+## only for upload_pub_key
 def get_jhub_token():
     with open('/etc/j4j/j4j_mount/j4j_token/jhub.token', 'r') as f:
         token = f.read().rstrip()

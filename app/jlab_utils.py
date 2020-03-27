@@ -67,6 +67,7 @@ def create_server_dirs(app_logger, uuidcode, app_urls, app_database, user_id, em
         config = utils_file_loads.get_general_config()
         user_id, slave_id, slave_hostname, containername, running_no = jlab_utils.get_slave_infos(app_logger,
                                                                                                   uuidcode,
+                                                                                                  app_database,
                                                                                                   email,
                                                                                                   servername)
         
