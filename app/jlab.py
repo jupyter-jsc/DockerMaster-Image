@@ -152,7 +152,7 @@ class JupyterLabHandler(Resource):
                 return 501
         except:
             app.log.exception("JLab.post failed. Bugfix required")
-        return "", 500
+        return 500
 
     def delete(self):
         """
