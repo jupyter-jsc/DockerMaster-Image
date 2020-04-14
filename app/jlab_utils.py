@@ -60,7 +60,7 @@ def call_slave_start(app_logger, uuidcode, app_database, app_urls, userfolder, j
     return True
     
 
-def create_server_dirs(app_logger, uuidcode, app_urls, app_database, user_id, email, servername, serverfolder, basefolder):
+def create_server_dirs(app_logger, uuidcode, app_urls, app_database, service, dashboard, user_id, email, servername, serverfolder, basefolder):
     results = utils_db.get_container_info(app_logger, uuidcode, app_database, user_id, servername)
     app_logger.debug("uuidcode={} - Container Info: {}".format(uuidcode, results))
     if len(results) > 0:
@@ -131,7 +131,11 @@ def create_server_dirs(app_logger, uuidcode, app_urls, app_database, user_id, em
     user_start_sh = Path(os.path.join(serverfolder, ".start.sh"))
     shutil.copy2(base_start_sh, user_start_sh)
     os.chown(user_start_sh, 1000, 100)
-    base_config_py = Path(os.path.join(basefolder, "base_home", ".config.py"))
+    if service == "Dashboard":
+        app_logger.debug("{} - Try to copy base_home/.config_{}.py".format(uuidcode, dashboard))
+        base_config_py = Path(os.path.join(basefolder, "base_home", ".config_{}.py".format(dashboard)))
+    else:
+        base_config_py = Path(os.path.join(basefolder, "base_home", ".config.py"))
     user_config_py = Path(os.path.join(serverfolder, ".config.py"))
     shutil.copy2(base_config_py, user_config_py)
     os.chown(user_config_py, 1000, 100)

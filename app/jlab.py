@@ -87,6 +87,8 @@ class JupyterLabHandler(Resource):
                 uuidcode
             Body:
                 servername
+                service
+                dashboard
                 email
                 environments
                 image
@@ -115,6 +117,8 @@ class JupyterLabHandler(Resource):
             email = request_json.get('email')
             email = email.replace("@", "_at_")
             environments = request_json.get('environments')
+            service = request_json.get('service')
+            dashboard = request_json.get('dashboard')
             image = request_json.get('image')
             port = request_json.get('port')
             config = utils_file_loads.get_general_config()
@@ -125,7 +129,7 @@ class JupyterLabHandler(Resource):
             serverfolder = Path(os.path.join(userfolder, '.{}'.format(uuidcode)))
             os.umask(0)
             user_id, set_user_quota = jlab_utils.create_user(app.log, uuidcode, app.database, quota_config, email, basefolder, userfolder)
-            jlab_utils.create_server_dirs(app.log, uuidcode, app.urls, app.database, user_id, email, servername, serverfolder, basefolder)
+            jlab_utils.create_server_dirs(app.log, uuidcode, app.urls, app.database, service, dashboard, user_id, email, servername, serverfolder, basefolder)
             #jlab_utils.setup_server_quota(app.log, uuidcode, quota_config, serverfolder)
             try:
                 start = jlab_utils.call_slave_start(app.log,
