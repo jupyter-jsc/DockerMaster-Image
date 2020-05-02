@@ -51,7 +51,7 @@ def get_next_slave(app_logger, uuidcode, database):
                                   database=database.get('database'))) as con: # auto closes
         with closing(con.cursor()) as cur: # auto closes
             with con: # auto commit
-                cmd = "SELECT \"id\", \"Hostname\" FROM \"DockerSpawner\" ORDER BY \"Running\" LIMIT 1"
+                cmd = "SELECT \"id\", \"Hostname\" FROM \"DockerSpawner\" WHERE \"Active\" = 1 ORDER BY \"Running\" LIMIT 1"
                 app_logger.trace("uuidcode={} - Execute: {}".format(uuidcode, cmd))
                 cur.execute(cmd)
                 results = cur.fetchall()
