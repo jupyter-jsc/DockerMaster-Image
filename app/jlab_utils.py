@@ -127,15 +127,16 @@ def create_server_dirs(app_logger, uuidcode, app_urls, app_database, service, da
         os.chown(sharedprojects, 1000, 100)
     
     # Copy files to user home
-    base_start_sh = Path(os.path.join(basefolder, "base_home", ".start.sh"))
+    if service == "Dashboard":
+        app_logger.debug("{} - Try to copy base_home/.config_{}.py and base_home/.start_{}.sh".format(uuidcode, dashboard.replace(" ", "_"), dashboard.replace(" ", "_")))
+        base_start_sh = Path(os.path.join(basefolder, "base_home", ".start_{}.sh".format(dashboard.replace(" ", "_"))))
+        base_config_py = Path(os.path.join(basefolder, "base_home", ".config_{}.py".format(dashboard.replace(" ", "_"))))
+    else:
+        base_config_py = Path(os.path.join(basefolder, "base_home", ".config.py"))
+        base_start_sh = Path(os.path.join(basefolder, "base_home", ".start.sh"))
     user_start_sh = Path(os.path.join(serverfolder, ".start.sh"))
     shutil.copy2(base_start_sh, user_start_sh)
     os.chown(user_start_sh, 1000, 100)
-    if service == "Dashboard":
-        app_logger.debug("{} - Try to copy base_home/.config_{}.py".format(uuidcode, dashboard))
-        base_config_py = Path(os.path.join(basefolder, "base_home", ".config_{}.py".format(dashboard)))
-    else:
-        base_config_py = Path(os.path.join(basefolder, "base_home", ".config.py"))
     user_config_py = Path(os.path.join(serverfolder, ".config.py"))
     shutil.copy2(base_config_py, user_config_py)
     os.chown(user_config_py, 1000, 100)
